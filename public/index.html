@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QuickBooks Analysis Agent</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">QB</div>
+      <div>
+        <h1>QuickBooks Analysis Agent</h1>
+        <p>Single-tenant insights for 2023-01-01 to 2026-01-31</p>
+      </div>
+    </div>
+    <div class="actions">
+      <a class="btn" href="/api/auth/connect">Connect QuickBooks</a>
+      <button class="btn secondary" id="syncBtn">Sync Data</button>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="panel" id="summaryPanel">
+      <h2>Snapshot</h2>
+      <div class="stats" id="stats"></div>
+      <div class="meta" id="syncStatus">No sync yet.</div>
+    </section>
+
+    <section class="panel chat">
+      <h2>Ask the Agent</h2>
+      <div id="messages" class="messages"></div>
+      <form id="chatForm" class="chat-form">
+        <input id="chatInput" type="text" placeholder="Ask about payments, customers, journal entries, or trends..." required />
+        <button class="btn" type="submit">Send</button>
+      </form>
+    </section>
+
+    <section class="panel charts">
+      <h2>Visual Analytics</h2>
+      <div id="charts" class="chart-grid"></div>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

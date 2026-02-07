@@ -1,0 +1,58 @@
+# QuickBooks Analysis Agent (Single Tenant)
+
+Single-tenant agentic chat app that connects to QuickBooks Online, ingests Payments, Customers, Journal Entries, and TransactionList, stores them in Postgres, and provides LLM-backed insights + Chart.js dashboards.
+
+## What’s Included
+- Node.js + TypeScript backend (Express)
+- Postgres storage
+- QuickBooks OAuth 2.0 connection + ingestion
+- Cerebras-backed analysis agent (OpenAI-compatible API)
+- Simple dashboard + chat UI (Chart.js)
+
+## Setup
+
+### 1) Install deps
+```bash
+npm install
+```
+
+### 2) Configure environment
+Create a `.env` with:
+```bash
+DATABASE_URL=postgres://user:pass@localhost:5432/qbo_agent
+PORT=3000
+
+QBO_CLIENT_ID=...
+QBO_CLIENT_SECRET=...
+QBO_REDIRECT_URI=http://localhost:3000/api/auth/callback
+QBO_ENV=sandbox
+QBO_SCOPES=com.intuit.quickbooks.accounting
+QBO_MINOR_VERSION=70
+DATA_START_DATE=2023-01-01
+DATA_END_DATE=2026-01-31
+
+CEREBRAS_API_KEY=...
+CEREBRAS_BASE_URL=https://api.cerebras.ai/v1
+CEREBRAS_MODEL=zai-glm-4.7
+```
+
+### 3) Initialize database
+```bash
+npm run db:init
+```
+
+### 4) Run
+```bash
+npm run dev
+```
+
+Open `http://localhost:3000`.
+
+## Usage
+1) Click **Connect QuickBooks** to authorize the app.
+2) Click **Sync Data** to ingest QuickBooks data for the configured range.
+3) Ask questions in the chat (e.g., “What are payment trends by month?”).
+
+## Notes
+- TransactionList report is ingested in 6‑month chunks for safety.
+- This is a single-tenant starter. If you want multi-tenant, we can add user/org tables and row-level tenancy.
