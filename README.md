@@ -52,6 +52,7 @@ Open `http://localhost:3000`.
 1) Click **Connect QuickBooks** to authorize the app.
 2) Click **Sync Data** to ingest QuickBooks data for the configured range.
 3) Ask questions in the chat (e.g., “What are payment trends by month?”).
+4) Use **Remove Connection** to disconnect. You can optionally purge synced data.
 
 ## Notes
 - TransactionList report is ingested in 6‑month chunks for safety.

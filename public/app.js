@@ -4,6 +4,7 @@ const statsEl = document.getElementById("stats");
 const messagesEl = document.getElementById("messages");
 const chartsEl = document.getElementById("charts");
 const syncBtn = document.getElementById("syncBtn");
+const disconnectBtn = document.getElementById("disconnectBtn");
 const syncStatus = document.getElementById("syncStatus");
 
 const addMessage = (text, role) => {
@@ -81,6 +82,29 @@ syncBtn.addEventListener("click", async () => {
     await fetchSummary();
   } catch (err) {
     syncStatus.textContent = "Sync failed.";
+  }
+});
+
+disconnectBtn.addEventListener("click", async () => {
+  const proceed = confirm("Remove the QuickBooks connection?\\n\\nClick OK to disconnect.\\nClick Cancel to keep the connection.");
+  if (!proceed) {
+    return;
+  }
+  const removeData = confirm("Do you also want to delete all synced QuickBooks data?");
+  try {
+    const res = await fetch(`/api/auth/disconnect?purge=${removeData ? "1" : "0"}`, { method: "POST" });
+    const data = await res.json();
+    if (!data.ok) {
+      syncStatus.textContent = `Disconnect failed: ${data.error}`;
+      return;
+    }
+    syncStatus.textContent = removeData ? "Disconnected and data purged." : "Disconnected.";
+    if (removeData) {
+      clearCharts();
+      renderStats({ totalCustomers: 0, totalPayments: 0, totalJournalEntries: 0, totalTransactionRows: 0 });
+    }
+  } catch {
+    syncStatus.textContent = "Disconnect failed.";
   }
 });
 

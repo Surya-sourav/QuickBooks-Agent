@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { buildAuthUrl, exchangeCodeForTokens } from "../qbo/oauth.js";
 import { saveConnection } from "../qbo/client.js";
+import { query } from "../db.js";
 
 export const authRouter = Router();
 
@@ -13,6 +14,19 @@ authRouter.get("/debug", (_req, res) => {
     redirectUri: process.env.QBO_REDIRECT_URI,
     authUrl: buildAuthUrl()
   });
+});
+
+authRouter.post("/disconnect", async (req, res) => {
+  const purge = req.query.purge === "1" || req.body?.purge === true;
+  try {
+    await query("DELETE FROM qbo_connection");
+    if (purge) {
+      await query("TRUNCATE qbo_customers, qbo_payments, qbo_journal_entries, qbo_transaction_list_rows");
+    }
+    res.json({ ok: true, purged: purge });
+  } catch (err: any) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 authRouter.get("/callback", async (req, res) => {
