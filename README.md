@@ -1,6 +1,10 @@
 # QuickBooks Analysis Agent (Single Tenant)
 
-Single-tenant agentic chat app that connects to QuickBooks Online, ingests Payments, Customers, Journal Entries, and TransactionList, stores them in Postgres, and provides LLM-backed insights + Chart.js dashboards.
+Agentic chat app that connects to QuickBooks Online, ingests Payments, Customers, Journal Entries, and TransactionList, stores them in Postgres, and provides LLM-backed insights + Chart.js dashboards.
+<img width="1277" height="741" alt="image" src="https://github.com/user-attachments/assets/b8f7ebc4-b642-496c-9cdf-2731ab7311ef" />
+
+<img width="1277" height="741" alt="image" src="https://github.com/user-attachments/assets/8b452c34-df32-4061-9ef7-4f7d8726583d" />
+
 
 ## What’s Included
 - Node.js + TypeScript backend (Express)
