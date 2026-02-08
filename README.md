@@ -8,6 +8,7 @@ Single-tenant agentic chat app that connects to QuickBooks Online, ingests Payme
 - QuickBooks OAuth 2.0 connection + ingestion
 - Cerebras-backed analysis agent (OpenAI-compatible API)
 - Simple dashboard + chat UI (Chart.js)
+- Transactions dashboard with AI categorization + sync back to QuickBooks (Class)
 
 ## Setup
 
@@ -31,6 +32,8 @@ QBO_MINOR_VERSION=70
 DATA_START_DATE=2023-01-01
 DATA_END_DATE=2026-01-31
 
+AI_TRANSACTION_CATEGORIES=Income,COGS,Payroll,Rent,Utilities,Marketing,Travel,Software,Insurance,Repairs,Bank Fees,Taxes,Other
+
 CEREBRAS_API_KEY=...
 CEREBRAS_BASE_URL=https://api.cerebras.ai/v1
 CEREBRAS_MODEL=zai-glm-4.7
@@ -53,7 +56,17 @@ Open `http://localhost:3000`.
 2) Click **Sync Data** to ingest QuickBooks data for the configured range.
 3) Ask questions in the chat (e.g., “What are payment trends by month?”).
 4) Use **Remove Connection** to disconnect. You can optionally purge synced data.
+5) Use **AI Categorize** to label transactions and **Sync Categories to QBO** to write back Classes.
+
+## Migrations
+If you already ran `db:init`, run the latest migration once:
+```bash
+npm run db:migrate
+```
 
 ## Notes
+- Categories are synced back as **Classes**. Ensure Class tracking is enabled in QuickBooks if you want to see them in reports.
+- TransactionList report rows may not include a transaction ID in some tenants; those rows will be skipped during sync.
 - TransactionList report is ingested in 6‑month chunks for safety.
 - This is a single-tenant starter. If you want multi-tenant, we can add user/org tables and row-level tenancy.
+- Bank account sources are derived from the TransactionList `Account` column and summarized in the Accounts Overview widget.

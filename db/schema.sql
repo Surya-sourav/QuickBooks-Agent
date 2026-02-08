@@ -42,20 +42,44 @@ CREATE TABLE IF NOT EXISTS qbo_journal_entries (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS qbo_accounts (
+  id SERIAL PRIMARY KEY,
+  qbo_id TEXT UNIQUE NOT NULL,
+  name TEXT,
+  account_type TEXT,
+  account_sub_type TEXT,
+  classification TEXT,
+  current_balance NUMERIC,
+  active BOOLEAN,
+  raw JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS qbo_transaction_list_rows (
   id SERIAL PRIMARY KEY,
   report_start_date DATE NOT NULL,
   report_end_date DATE NOT NULL,
+  txn_id TEXT,
   txn_date DATE,
   txn_type TEXT,
   doc_num TEXT,
   name TEXT,
   account TEXT,
   amount NUMERIC,
+  ai_category TEXT,
+  ai_confidence NUMERIC,
+  ai_status TEXT,
+  qb_class_id TEXT,
+  qb_sync_status TEXT,
+  qb_sync_error TEXT,
   raw JSONB NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_qbo_payments_txn_date ON qbo_payments (txn_date);
 CREATE INDEX IF NOT EXISTS idx_qbo_journal_entries_txn_date ON qbo_journal_entries (txn_date);
 CREATE INDEX IF NOT EXISTS idx_qbo_transaction_list_txn_date ON qbo_transaction_list_rows (txn_date);
+CREATE INDEX IF NOT EXISTS idx_qbo_transaction_list_txn_id ON qbo_transaction_list_rows (txn_id);
+CREATE INDEX IF NOT EXISTS idx_qbo_transaction_list_ai_category ON qbo_transaction_list_rows (ai_category);

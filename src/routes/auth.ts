@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { buildAuthUrl, exchangeCodeForTokens } from "../qbo/oauth.js";
-import { saveConnection } from "../qbo/client.js";
+import { saveConnection, getConnection } from "../qbo/client.js";
 import { query } from "../db.js";
+import { config } from "../config.js";
 
 export const authRouter = Router();
 
@@ -14,6 +15,19 @@ authRouter.get("/debug", (_req, res) => {
     redirectUri: process.env.QBO_REDIRECT_URI,
     authUrl: buildAuthUrl()
   });
+});
+
+authRouter.get("/status", async (_req, res) => {
+  try {
+    const conn = await getConnection();
+    res.json({
+      connected: Boolean(conn),
+      realmId: conn?.realm_id ?? null,
+      environment: config.qbo.environment
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 authRouter.post("/disconnect", async (req, res) => {

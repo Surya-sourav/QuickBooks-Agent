@@ -33,6 +33,10 @@ export const config = {
     dataStartDate: process.env.DATA_START_DATE ?? "2023-01-01",
     dataEndDate: process.env.DATA_END_DATE ?? "2026-01-31"
   },
+  ai: {
+    transactionCategories: (process.env.AI_TRANSACTION_CATEGORIES ??
+      "Income,COGS,Payroll,Rent,Utilities,Marketing,Travel,Software,Insurance,Repairs,Bank Fees,Taxes,Other").split(",").map((c) => c.trim()).filter(Boolean)
+  },
   cerebras: {
     apiKey: required("CEREBRAS_API_KEY"),
     baseUrl: process.env.CEREBRAS_BASE_URL ?? "https://api.cerebras.ai/v1",

@@ -6,6 +6,9 @@ import { authRouter } from "./routes/auth.js";
 import { ingestRouter } from "./routes/ingest.js";
 import { chatRouter } from "./routes/chat.js";
 import { dataRouter } from "./routes/data.js";
+import { transactionsRouter } from "./routes/transactions.js";
+import { accountsRouter } from "./routes/accounts.js";
+import { companyRouter } from "./routes/company.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,6 +26,9 @@ app.use("/api/auth", authRouter);
 app.use("/api/ingest", ingestRouter);
 app.use("/api/chat", chatRouter);
 app.use("/api/data", dataRouter);
+app.use("/api/transactions", transactionsRouter);
+app.use("/api/accounts", accountsRouter);
+app.use("/api/company", companyRouter);
 
 app.use(express.static(path.join(__dirname, "../public")));
 

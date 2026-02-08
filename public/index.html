@@ -13,7 +13,7 @@
       <div class="logo">QB</div>
       <div>
         <h1>QuickBooks Analysis Agent</h1>
-        <p>Single-tenant insights for 2023-01-01 to 2026-01-31</p>
+        <p id="companyInfo">Single-tenant insights for 2023-01-01 to 2026-01-31</p>
       </div>
     </div>
     <div class="actions">
@@ -24,6 +24,29 @@
   </header>
 
   <main class="grid">
+    <section class="panel accounts">
+      <details id="accountsDetails">
+        <summary>Bank Accounts (Transaction Source)</summary>
+        <div class="meta">Derived from the TransactionList “Account” column.</div>
+        <div class="table-wrap">
+          <table class="transactions-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Subtype</th>
+                <th>Classification</th>
+                <th>Transactions</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody id="accountsBody"></tbody>
+          </table>
+        </div>
+        <div class="meta" id="accountsMeta">No accounts loaded.</div>
+      </details>
+    </section>
+
     <section class="panel" id="summaryPanel">
       <h2>Snapshot</h2>
       <div class="stats" id="stats"></div>
@@ -42,6 +65,46 @@
     <section class="panel charts">
       <h2>Visual Analytics</h2>
       <div id="charts" class="chart-grid"></div>
+    </section>
+
+    <section class="panel transactions">
+      <div class="transactions-header">
+        <h2>Transactions</h2>
+        <div class="transactions-actions">
+          <button class="btn secondary" id="categorizeBtn">AI Categorize</button>
+          <button class="btn ghost" id="syncCategoriesBtn">Sync Categories to QBO</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="transactions-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Type</th>
+              <th>Name</th>
+              <th>Account</th>
+              <th>Amount</th>
+              <th>Category</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="transactionsBody"></tbody>
+        </table>
+      </div>
+      <div class="transactions-footer">
+        <div class="meta" id="transactionsStatus"></div>
+        <div class="pagination">
+          <button class="btn ghost" id="prevPageBtn">Prev</button>
+          <div class="page-info" id="pageInfo">Page 1 of 1</div>
+          <button class="btn ghost" id="nextPageBtn">Next</button>
+          <select id="pageSizeSelect" class="page-size">
+            <option value="25">25</option>
+            <option value="50" selected>50</option>
+            <option value="100">100</option>
+          </select>
+        </div>
+      </div>
+      <div class="meta" id="transactionsMeta">No transactions loaded.</div>
     </section>
   </main>
 
