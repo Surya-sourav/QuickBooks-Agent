@@ -56,6 +56,13 @@ CREATE TABLE IF NOT EXISTS qbo_accounts (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS ai_category_account_map (
+  category TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  account_name TEXT,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS qbo_transaction_list_rows (
   id SERIAL PRIMARY KEY,
   report_start_date DATE NOT NULL,

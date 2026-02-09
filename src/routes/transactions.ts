@@ -59,3 +59,20 @@ transactionsRouter.post("/sync", async (req, res) => {
 transactionsRouter.get("/sync/status", (_req, res) => {
   res.json({ ok: true, job: getSyncJob() });
 });
+
+transactionsRouter.get("/sync/failures", async (req, res) => {
+  const limit = Math.min(Number(req.query.limit ?? 10), 50);
+  try {
+    const rowsRes = await query(
+      `SELECT txn_date, txn_type, name, account, amount, qb_sync_error
+       FROM qbo_transaction_list_rows
+       WHERE qb_sync_status = 'failed'
+       ORDER BY updated_at DESC
+       LIMIT $1`,
+      [limit]
+    );
+    res.json({ rows: rowsRes.rows });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});

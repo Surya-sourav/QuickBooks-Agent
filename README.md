@@ -65,8 +65,9 @@ npm run db:migrate
 ```
 
 ## Notes
-- Categories are synced back as **Classes**. Ensure Class tracking is enabled in QuickBooks if you want to see them in reports.
+- Categories are synced back as **AccountRef** (the transaction “Category” in QBO). Map AI categories to QBO accounts in the Category Mapping widget.
 - TransactionList report rows may not include a transaction ID in some tenants; those rows will be skipped during sync.
 - TransactionList report is ingested in 6‑month chunks for safety.
 - This is a single-tenant starter. If you want multi-tenant, we can add user/org tables and row-level tenancy.
 - Bank account sources are derived from the TransactionList `Account` column and summarized in the Accounts Overview widget.
+- Use **Auto Map** to generate mappings by account type/subtype (you can edit them afterward).

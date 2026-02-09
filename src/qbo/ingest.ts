@@ -141,6 +141,10 @@ const upsertAccounts = async (accounts: any[]) => {
 const parseReportRows = (report: any, startDate: string, endDate: string) => {
   const columns = report?.Columns?.Column ?? [];
   const columnTitles = columns.map((col: any) => (col.ColTitle ?? col.Name ?? "").toString());
+  const hasMeaningfulTitles = columnTitles.some(
+    (title) => title && !/^col_\\d+$/i.test(title) && title.trim() !== ""
+  );
+  const fallbackOrder = ["Date", "Transaction Type", "Doc Num", "Name", "Account", "Amount", "Class"];
 
   const rows: any[] = [];
   const walk = (row: any) => {
@@ -149,12 +153,15 @@ const parseReportRows = (report: any, startDate: string, endDate: string) => {
       const ids: Record<string, string> = {};
       const hrefs: Record<string, string> = {};
       row.ColData.forEach((col: any, idx: number) => {
-        record[columnTitles[idx] || `col_${idx}`] = col.value ?? "";
+        const key = hasMeaningfulTitles
+          ? columnTitles[idx] || `col_${idx}`
+          : fallbackOrder[idx] || `col_${idx}`;
+        record[key] = col.value ?? "";
         if (col.id) {
-          ids[columnTitles[idx] || `col_${idx}`] = col.id;
+          ids[key] = col.id;
         }
         if (col.href) {
-          hrefs[columnTitles[idx] || `col_${idx}`] = col.href;
+          hrefs[key] = col.href;
         }
       });
       rows.push({ record, ids, hrefs, raw: row });
@@ -180,41 +187,90 @@ const parseReportRows = (report: any, startDate: string, endDate: string) => {
     return undefined;
   };
 
+  const parseAmount = (value?: string) => {
+    if (!value) return null;
+    const trimmed = value.trim();
+    const isNegative = trimmed.startsWith("(") && trimmed.endsWith(")");
+    const cleaned = trimmed.replace(/[,$()]/g, "");
+    const num = Number(cleaned);
+    if (Number.isNaN(num)) return null;
+    return isNegative ? -num : num;
+  };
+
   return rows.map((row) => {
     const rec = row.record;
     const ids = row.ids ?? {};
     const hrefs = row.hrefs ?? {};
-    const txnDate = extract(rec, "Date");
-    const txnType = extractAny(rec, ["Transaction Type", "Txn Type", "Type"]);
-    const docNum = extractAny(rec, ["Num", "Doc Num", "DocNumber"]);
+    const txnDate = extractAny(rec, ["Date", "tx_date", "TxnDate"]);
+    const txnType = extractAny(rec, ["Transaction Type", "Txn Type", "Type", "txn_type"]);
+    const docNum = extractAny(rec, ["Num", "Doc Num", "DocNumber", "doc_num"]);
     const name = extractAny(rec, ["Name", "Customer", "Vendor", "Employee"]);
-    const account = extract(rec, "Account");
-    const amount = extractAny(rec, ["Amount", "Total"]);
+    let account = extractAny(rec, ["Account", "account", "Account Name", "account_name"]);
+    if (!account) {
+      const entry = Object.entries(rec).find(([key]) => key.toLowerCase().includes("account"));
+      account = entry?.[1];
+    }
+
+    let amount = extractAny(rec, [
+      "Amount",
+      "Total",
+      "amount",
+      "net_amount",
+      "net amount",
+      "subt_nat_amount",
+      "subt nat amount",
+      "home_net_amount",
+      "foreign_net_amount",
+      "credit_amt",
+      "debt_amt",
+      "balance"
+    ]);
+    if (!amount) {
+      const amountKey = Object.keys(rec).find((key) =>
+        key.toLowerCase().includes("amount") ||
+        key.toLowerCase().includes("total") ||
+        key.toLowerCase().includes("credit") ||
+        key.toLowerCase().includes("debt")
+      );
+      amount = amountKey ? rec[amountKey] : undefined;
+    }
+    if (!amount) {
+      const numeric = Object.values(rec)
+        .filter((value) => typeof value === "string")
+        .map((value) => value.trim())
+        .filter((value) => /^[\\$\\-\\(\\)\\d,\\.]+$/.test(value) && /\\d/.test(value));
+      amount = numeric.length ? numeric[numeric.length - 1] : undefined;
+    }
+    const className = extractAny(rec, ["Class", "class", "Class Name", "class_name"]);
     const txnIdFromIdCols =
       extractAny(ids, ["Transaction Type", "Txn Type", "Type", "TxnId", "Txn ID", "Transaction Id", "Transaction ID", "Id"]) ??
       Object.values(ids)[0];
     let txnIdFromHref: string | undefined;
+    let txnTypeFromHref: string | undefined;
     for (const href of Object.values(hrefs)) {
       try {
         const url = new URL(href);
         txnIdFromHref = url.searchParams.get("txnId") ?? url.searchParams.get("txnid") ?? undefined;
+        txnTypeFromHref = url.searchParams.get("txnType") ?? url.searchParams.get("txntype") ?? undefined;
         if (txnIdFromHref) break;
       } catch {
         // ignore invalid hrefs
       }
     }
     const txnId = txnIdFromIdCols ?? txnIdFromHref ?? extractAny(rec, ["TxnId", "Txn ID", "Transaction Id", "Transaction ID", "Id"]);
+    const txnTypeFinal = txnTypeFromHref ?? txnType;
 
     return {
       report_start_date: startDate,
       report_end_date: endDate,
       txn_id: txnId ?? null,
       txn_date: txnDate ?? null,
-      txn_type: txnType ?? null,
+      txn_type: txnTypeFinal ?? null,
       doc_num: docNum ?? null,
       name: name ?? null,
       account: account ?? null,
-      amount: amount ? Number(amount.replace(/,/g, "")) : null,
+      amount: parseAmount(amount),
+      class_name: className ?? null,
       raw: row.raw
     };
   });
@@ -225,8 +281,9 @@ const upsertTransactionList = async (rows: any[]) => {
   await withClient(async (client) => {
     for (const row of rows) {
       await client.query(
-        `INSERT INTO qbo_transaction_list_rows (report_start_date, report_end_date, txn_id, txn_date, txn_type, doc_num, name, account, amount, raw)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)` ,
+        `INSERT INTO qbo_transaction_list_rows
+           (report_start_date, report_end_date, txn_id, txn_date, txn_type, doc_num, name, account, amount, ai_category, ai_status, raw)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)` ,
         [
           row.report_start_date,
           row.report_end_date,
@@ -237,6 +294,8 @@ const upsertTransactionList = async (rows: any[]) => {
           row.name,
           row.account,
           row.amount,
+          row.class_name ?? null,
+          row.class_name ? "from_qbo" : null,
           row.raw
         ]
       );
@@ -296,7 +355,7 @@ export const ingestAll = async () => {
     try {
       report = await qboReport<any>(conn.realm_id, "TransactionList", {
         ...baseParams,
-        columns: "tx_date,txn_type,doc_num,name,account,amount",
+        columns: "tx_date,txn_type,doc_num,name,account_name,account,net_amount,subt_nat_amount,credit_amt,debt_amt,class",
         qzurl: "true"
       });
     } catch {

@@ -1,6 +1,5 @@
 import { config } from "../config.js";
 import { query } from "../db.js";
-import { ensureClass } from "../qbo/classes.js";
 import { getConnection, qboGet, qboPost } from "../qbo/client.js";
 
 type SyncRow = {
@@ -15,7 +14,10 @@ type EntityMap = {
   key: string;
 };
 
-const normalizeTxnType = (value: string) => value.toLowerCase().replace(/\s+/g, "");
+const normalizeTxnType = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
 
 const resolveEntity = (txnType: string | null): EntityMap | null => {
   if (!txnType) return null;
@@ -23,62 +25,85 @@ const resolveEntity = (txnType: string | null): EntityMap | null => {
   const map: Record<string, EntityMap> = {
     bill: { endpoint: "bill", key: "Bill" },
     invoice: { endpoint: "invoice", key: "Invoice" },
-    payment: { endpoint: "payment", key: "Payment" },
     salesreceipt: { endpoint: "salesreceipt", key: "SalesReceipt" },
     purchase: { endpoint: "purchase", key: "Purchase" },
     expense: { endpoint: "purchase", key: "Purchase" },
     journalentry: { endpoint: "journalentry", key: "JournalEntry" },
-    deposit: { endpoint: "deposit", key: "Deposit" },
-    transfer: { endpoint: "transfer", key: "Transfer" },
     creditmemo: { endpoint: "creditmemo", key: "CreditMemo" },
     refundreceipt: { endpoint: "refundreceipt", key: "RefundReceipt" },
     vendorcredit: { endpoint: "vendorcredit", key: "VendorCredit" },
     check: { endpoint: "check", key: "Check" },
-    billpayment: { endpoint: "billpayment", key: "BillPayment" }
+    billpaymentcheck: { endpoint: "billpaymentcheck", key: "BillPaymentCheck" },
+    billpaymentcreditcard: { endpoint: "billpaymentcreditcard", key: "BillPaymentCreditCard" }
   };
 
   return map[type] ?? null;
 };
 
-const applyClassRef = (line: any, classRef: { value: string; name?: string }) => {
+const unsupportedUpdateEndpoints = new Set([
+  "check",
+  "billpaymentcheck",
+  "billpaymentcreditcard"
+]);
+
+const requiredRefsByEntity: Record<string, string[]> = {
+  Bill: ["VendorRef"],
+  VendorCredit: ["VendorRef"],
+  Invoice: ["CustomerRef"],
+  SalesReceipt: ["CustomerRef"],
+  CreditMemo: ["CustomerRef"],
+  RefundReceipt: ["CustomerRef"]
+};
+
+const resolveAccountForCategory = async (category: string | null) => {
+  if (!category) return null;
+  const mapped = await query(
+    "SELECT account_id, account_name FROM ai_category_account_map WHERE category = $1",
+    [category]
+  );
+  if (mapped.rows[0]) {
+    return { value: mapped.rows[0].account_id, name: mapped.rows[0].account_name ?? undefined };
+  }
+
+  const guess = await query(
+    "SELECT qbo_id, name FROM qbo_accounts WHERE lower(name) = lower($1) OR lower(name) LIKE lower($2) LIMIT 1",
+    [category, `%${category}%`]
+  );
+  if (guess.rows[0]) {
+    return { value: guess.rows[0].qbo_id, name: guess.rows[0].name };
+  }
+
+  return null;
+};
+
+const applyAccountRef = (line: any, accountRef: { value: string; name?: string }) => {
   const updated = { ...line };
   const detailType = line?.DetailType;
-  if (!detailType) return updated;
+  if (!detailType) return null;
 
   switch (detailType) {
     case "AccountBasedExpenseLineDetail":
       updated.AccountBasedExpenseLineDetail = {
         ...line.AccountBasedExpenseLineDetail,
-        ClassRef: classRef
-      };
-      break;
-    case "ItemBasedExpenseLineDetail":
-      updated.ItemBasedExpenseLineDetail = {
-        ...line.ItemBasedExpenseLineDetail,
-        ClassRef: classRef
-      };
-      break;
-    case "SalesItemLineDetail":
-      updated.SalesItemLineDetail = {
-        ...line.SalesItemLineDetail,
-        ClassRef: classRef
+        AccountRef: accountRef
       };
       break;
     case "JournalEntryLineDetail":
       updated.JournalEntryLineDetail = {
         ...line.JournalEntryLineDetail,
-        ClassRef: classRef
+        AccountRef: accountRef
       };
       break;
     default:
-      break;
+      return null;
   }
 
   return updated;
 };
 
-const buildLineUpdate = (line: any, classRef: { value: string; name?: string }) => {
-  const updated = applyClassRef(line, classRef);
+const buildLineUpdate = (line: any, accountRef: { value: string; name?: string }) => {
+  const updated = applyAccountRef(line, accountRef);
+  if (!updated) return null;
   return {
     Id: updated.Id,
     DetailType: updated.DetailType,
@@ -138,14 +163,18 @@ export const syncCategorizedTransactions = async (
       options?.onProgress?.({ total, processed, synced, skipped, failed });
       continue;
     }
+    if (unsupportedUpdateEndpoints.has(entity.endpoint)) {
+      await query(
+        "UPDATE qbo_transaction_list_rows SET qb_sync_status='skipped', qb_sync_error=$1, updated_at=NOW() WHERE id=$2",
+        [`Update not supported for ${entity.key}.`, row.id]
+      );
+      skipped += 1;
+      processed += 1;
+      options?.onProgress?.({ total, processed, synced, skipped, failed });
+      continue;
+    }
 
     try {
-      const classId = await ensureClass(conn.realm_id, row.ai_category);
-      await query(
-        "UPDATE qbo_transaction_list_rows SET qb_class_id=$1, updated_at=NOW() WHERE id=$2",
-        [classId, row.id]
-      );
-
       const transaction = await qboGet<any>(`/v3/company/${conn.realm_id}/${entity.endpoint}/${row.txn_id}`, {
         minorversion: config.qbo.minorVersion
       });
@@ -154,36 +183,104 @@ export const syncCategorizedTransactions = async (
         throw new Error("Missing Id or SyncToken in transaction payload.");
       }
 
-      const classRef = { value: classId, name: row.ai_category };
-      const lines = Array.isArray(payload.Line) ? payload.Line : [];
-      const updatedLines = lines.map((line: any) => buildLineUpdate(line, classRef));
+      const accountRef = await resolveAccountForCategory(row.ai_category);
+      if (!accountRef) {
+        await query(
+          "UPDATE qbo_transaction_list_rows SET qb_sync_status='skipped', qb_sync_error=$1, updated_at=NOW() WHERE id=$2",
+          [`No account mapping for category: ${row.ai_category}`, row.id]
+        );
+        skipped += 1;
+        processed += 1;
+        options?.onProgress?.({ total, processed, synced, skipped, failed });
+        continue;
+      }
 
-      const updatePayload = {
+      const lines = Array.isArray(payload.Line) ? payload.Line : [];
+      const updatedLines = lines
+        .map((line: any) => buildLineUpdate(line, accountRef))
+        .filter(Boolean);
+
+      if (updatedLines.length === 0) {
+        await query(
+          "UPDATE qbo_transaction_list_rows SET qb_sync_status='skipped', qb_sync_error=$1, updated_at=NOW() WHERE id=$2",
+          ["No account-eligible lines found.", row.id]
+        );
+        skipped += 1;
+        processed += 1;
+        options?.onProgress?.({ total, processed, synced, skipped, failed });
+        continue;
+      }
+
+      const requiredRefs = requiredRefsByEntity[entity.key] ?? [];
+      let missingRequired = false;
+      for (const ref of requiredRefs) {
+        if (!payload?.[ref]) {
+          await query(
+            "UPDATE qbo_transaction_list_rows SET qb_sync_status='skipped', qb_sync_error=$1, updated_at=NOW() WHERE id=$2",
+            [`Missing required ${ref} for ${entity.key}.`, row.id]
+          );
+          skipped += 1;
+          processed += 1;
+          options?.onProgress?.({ total, processed, synced, skipped, failed });
+          missingRequired = true;
+          break;
+        }
+      }
+      if (missingRequired) {
+        continue;
+      }
+
+      const updatePayload: any = {
         Id: payload.Id,
         SyncToken: payload.SyncToken,
         sparse: true,
         Line: updatedLines
       };
 
+      if (payload.VendorRef) updatePayload.VendorRef = payload.VendorRef;
+      if (payload.CustomerRef) updatePayload.CustomerRef = payload.CustomerRef;
+      if (payload.PayeeRef) updatePayload.PayeeRef = payload.PayeeRef;
+      if (payload.EntityRef) updatePayload.EntityRef = payload.EntityRef;
+      if (payload.AccountRef) updatePayload.AccountRef = payload.AccountRef;
+      if (payload.PaymentType) updatePayload.PaymentType = payload.PaymentType;
+      if (payload.TxnDate) updatePayload.TxnDate = payload.TxnDate;
+      if (payload.CurrencyRef) updatePayload.CurrencyRef = payload.CurrencyRef;
+      if (payload.GlobalTaxCalculation) updatePayload.GlobalTaxCalculation = payload.GlobalTaxCalculation;
+      if (payload.TxnTaxDetail) updatePayload.TxnTaxDetail = payload.TxnTaxDetail;
+      if (payload.TxnTaxCodeRef) updatePayload.TxnTaxCodeRef = payload.TxnTaxCodeRef;
+
       await qboPost<any>(`/v3/company/${conn.realm_id}/${entity.endpoint}`, updatePayload, {
         minorversion: config.qbo.minorVersion
       });
 
       await query(
-        "UPDATE qbo_transaction_list_rows SET qb_sync_status='synced', qb_sync_error=NULL, updated_at=NOW() WHERE id=$1",
-        [row.id]
+        "UPDATE qbo_transaction_list_rows SET qb_sync_status='synced', qb_sync_error=NULL, account=COALESCE($1, account), updated_at=NOW() WHERE id=$2",
+        [accountRef.name ?? null, row.id]
       );
       synced += 1;
       processed += 1;
       options?.onProgress?.({ total, processed, synced, skipped, failed });
     } catch (err: any) {
-      await query(
-        "UPDATE qbo_transaction_list_rows SET qb_sync_status='failed', qb_sync_error=$1, updated_at=NOW() WHERE id=$2",
-        [err.message ?? "Sync failed", row.id]
-      );
-      failed += 1;
-      processed += 1;
-      options?.onProgress?.({ total, processed, synced, skipped, failed });
+      const msg = (err?.message ?? "Sync failed").toString();
+      const trimmed = msg.length > 500 ? `${msg.slice(0, 500)}...` : msg;
+      const notSupported = /operation .* not supported/i.test(msg);
+      if (notSupported) {
+        await query(
+          "UPDATE qbo_transaction_list_rows SET qb_sync_status='skipped', qb_sync_error=$1, updated_at=NOW() WHERE id=$2",
+          [trimmed, row.id]
+        );
+        skipped += 1;
+        processed += 1;
+        options?.onProgress?.({ total, processed, synced, skipped, failed });
+      } else {
+        await query(
+          "UPDATE qbo_transaction_list_rows SET qb_sync_status='failed', qb_sync_error=$1, updated_at=NOW() WHERE id=$2",
+          [trimmed, row.id]
+        );
+        failed += 1;
+        processed += 1;
+        options?.onProgress?.({ total, processed, synced, skipped, failed });
+      }
     }
   }
 

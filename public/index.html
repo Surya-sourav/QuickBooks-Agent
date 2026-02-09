@@ -47,6 +47,28 @@
       </details>
     </section>
 
+    <section class="panel mapping">
+      <div class="transactions-header">
+        <h2>Category Mapping</h2>
+        <div class="transactions-actions">
+          <button class="btn ghost" id="autoMapBtn">Auto Map</button>
+        </div>
+      </div>
+      <div class="meta">Map AI categories to QuickBooks account categories (AccountRef).</div>
+      <div class="table-wrap">
+        <table class="transactions-table">
+          <thead>
+            <tr>
+              <th>AI Category</th>
+              <th>QuickBooks Account</th>
+            </tr>
+          </thead>
+          <tbody id="mappingBody"></tbody>
+        </table>
+      </div>
+      <div class="meta" id="mappingMeta">No mappings loaded.</div>
+    </section>
+
     <section class="panel" id="summaryPanel">
       <h2>Snapshot</h2>
       <div class="stats" id="stats"></div>
@@ -82,9 +104,9 @@
               <th>Date</th>
               <th>Type</th>
               <th>Name</th>
-              <th>Account</th>
+              <th>Category (QBO)</th>
               <th>Amount</th>
-              <th>Category</th>
+              <th>AI Category</th>
               <th>Status</th>
             </tr>
           </thead>
@@ -105,6 +127,7 @@
         </div>
       </div>
       <div class="meta" id="transactionsMeta">No transactions loaded.</div>
+      <div class="sync-errors" id="syncErrors"></div>
     </section>
   </main>
 

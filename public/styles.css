@@ -235,6 +235,10 @@ body {
   margin-bottom: 8px;
 }
 
+.mapping {
+  grid-column: 1 / -1;
+}
+
 .transactions-header {
   display: flex;
   justify-content: space-between;
@@ -331,6 +335,17 @@ body {
   top: 0;
   background: #fff3e2;
   z-index: 1;
+}
+
+.sync-errors {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.sync-errors ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
 }
 
 .meta {

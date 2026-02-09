@@ -19,6 +19,10 @@ const pageInfo = document.getElementById("pageInfo");
 const pageSizeSelect = document.getElementById("pageSizeSelect");
 const accountsBody = document.getElementById("accountsBody");
 const accountsMeta = document.getElementById("accountsMeta");
+const syncErrors = document.getElementById("syncErrors");
+const mappingBody = document.getElementById("mappingBody");
+const mappingMeta = document.getElementById("mappingMeta");
+const autoMapBtn = document.getElementById("autoMapBtn");
 
 let txPage = 1;
 let txLimit = Number(pageSizeSelect?.value ?? 50);
@@ -32,6 +36,17 @@ const addMessage = (text, role) => {
   div.textContent = text;
   messagesEl.appendChild(div);
   messagesEl.scrollTop = messagesEl.scrollHeight;
+};
+
+const formatAmount = (value) => {
+  if (value === null || value === undefined || value === "") return "-";
+  const num = Number(String(value).replace(/[^0-9.-]/g, ""));
+  if (Number.isNaN(num)) return String(value);
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 2
+  }).format(num);
 };
 
 const renderStats = (summary) => {
@@ -124,7 +139,7 @@ const renderTransactions = (rows, total, offset, limit) => {
       <td>${row.txn_type ?? ""}</td>
       <td>${row.name ?? ""}</td>
       <td>${row.account ?? ""}</td>
-      <td>${row.amount ?? ""}</td>
+      <td>${formatAmount(row.amount)}</td>
       <td>${row.ai_category ?? "-"}</td>
       <td>${row.qb_sync_status ?? row.ai_status ?? "-"}</td>
     `;
@@ -144,6 +159,25 @@ const loadTransactions = async () => {
   txTotal = data.total ?? 0;
   renderTransactions(data.rows ?? [], txTotal, data.offset ?? 0, data.limit ?? 0);
   updatePagination();
+};
+
+const loadSyncFailures = async () => {
+  if (!syncErrors) return;
+  const res = await fetch("/api/transactions/sync/failures?limit=5");
+  if (!res.ok) return;
+  const data = await res.json();
+  const rows = data.rows ?? [];
+  if (!rows.length) {
+    syncErrors.textContent = "";
+    return;
+  }
+  const list = rows
+    .map(
+      (row) =>
+        `<li>${row.txn_type ?? ""} ${row.name ?? ""} (${row.amount ?? ""}) - ${row.qb_sync_error ?? ""}</li>`
+    )
+    .join("");
+  syncErrors.innerHTML = `<div>Recent sync errors:</div><ul>${list}</ul>`;
 };
 
 const loadAccounts = async () => {
@@ -170,6 +204,78 @@ const loadAccounts = async () => {
     accountsMeta.textContent = `Loaded ${rows.length} source accounts.`;
   }
 };
+
+const loadCategoryMapping = async () => {
+  if (!mappingBody) return;
+  const res = await fetch("/api/category-mapping");
+  if (!res.ok) return;
+  const data = await res.json();
+  const categories = data.categories ?? [];
+  const accounts = data.accounts ?? [];
+  const mappings = new Map((data.mappings ?? []).map((m) => [m.category, m.account_id]));
+
+  mappingBody.innerHTML = "";
+  categories.forEach((category) => {
+    const tr = document.createElement("tr");
+    const tdCat = document.createElement("td");
+    tdCat.textContent = category;
+    const tdSel = document.createElement("td");
+    const select = document.createElement("select");
+    select.className = "page-size";
+
+    const emptyOpt = document.createElement("option");
+    emptyOpt.value = "";
+    emptyOpt.textContent = "Select account";
+    select.appendChild(emptyOpt);
+
+    accounts.forEach((acc) => {
+      const opt = document.createElement("option");
+      opt.value = acc.qbo_id;
+      opt.textContent = acc.name ?? acc.qbo_id;
+      if (mappings.get(category) === acc.qbo_id) {
+        opt.selected = true;
+      }
+      select.appendChild(opt);
+    });
+
+    select.addEventListener("change", async () => {
+      if (!select.value) return;
+      await fetch("/api/category-mapping", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ category, accountId: select.value })
+      });
+      if (mappingMeta) {
+        mappingMeta.textContent = `Saved mapping for ${category}.`;
+      }
+    });
+
+    tdSel.appendChild(select);
+    tr.appendChild(tdCat);
+    tr.appendChild(tdSel);
+    mappingBody.appendChild(tr);
+  });
+
+  if (mappingMeta) {
+    mappingMeta.textContent = `Loaded ${categories.length} categories.`;
+  }
+};
+
+if (autoMapBtn) {
+  autoMapBtn.addEventListener("click", async () => {
+    if (!confirm("Auto-generate mappings based on account type?")) return;
+    const res = await fetch("/api/category-mapping/auto", { method: "POST" });
+    if (!res.ok) {
+      if (mappingMeta) mappingMeta.textContent = "Auto-map failed.";
+      return;
+    }
+    const data = await res.json();
+    if (mappingMeta) {
+      mappingMeta.textContent = `Auto-mapped ${data.result?.created?.length ?? 0} categories.`;
+    }
+    await loadCategoryMapping();
+  });
+}
 
 const updatePagination = () => {
   const totalPages = Math.max(1, Math.ceil(txTotal / txLimit));
@@ -284,10 +390,12 @@ const startSyncPolling = () => {
 
       if (job.status === "running") {
         await loadTransactions();
+        await loadSyncFailures();
         syncPoll = setTimeout(poll, 1500);
       } else {
         syncPoll = null;
         await loadTransactions();
+        await loadSyncFailures();
       }
     } catch {
       syncPoll = null;
@@ -398,3 +506,5 @@ fetchAuthStatus();
 loadTransactions();
 loadAccounts();
 loadCompanyInfo();
+loadSyncFailures();
+loadCategoryMapping();
