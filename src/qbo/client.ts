@@ -103,6 +103,33 @@ export const qboGet = async <T>(path: string, params?: Record<string, string>) =
   return res.json() as Promise<T>;
 };
 
+export const qboPost = async <T>(path: string, body: unknown, params?: Record<string, string>) => {
+  const conn = await ensureAccessToken();
+  const url = new URL(`${qboApiBase}${path}`);
+  if (params) {
+    for (const [key, value] of Object.entries(params)) {
+      url.searchParams.set(key, value);
+    }
+  }
+
+  const res = await fetch(url.toString(), {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${conn.access_token}`,
+      "Accept": "application/json",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`QBO request failed: ${res.status} ${text}`);
+  }
+
+  return res.json() as Promise<T>;
+};
+
 export const qboQuery = async <T>(realmId: string, queryString: string) => {
   return qboGet<T>(`/v3/company/${realmId}/query`, {
     query: queryString,

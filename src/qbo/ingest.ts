@@ -108,18 +108,63 @@ const upsertJournalEntries = async (entries: any[]) => {
   });
 };
 
+const upsertAccounts = async (accounts: any[]) => {
+  if (accounts.length === 0) return;
+  await withClient(async (client) => {
+    for (const account of accounts) {
+      await client.query(
+        `INSERT INTO qbo_accounts (qbo_id, name, account_type, account_sub_type, classification, current_balance, active, raw)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (qbo_id) DO UPDATE SET
+           name=EXCLUDED.name,
+           account_type=EXCLUDED.account_type,
+           account_sub_type=EXCLUDED.account_sub_type,
+           classification=EXCLUDED.classification,
+           current_balance=EXCLUDED.current_balance,
+           active=EXCLUDED.active,
+           raw=EXCLUDED.raw,
+           updated_at=NOW()` ,
+        [
+          account.Id,
+          account.Name ?? null,
+          account.AccountType ?? null,
+          account.AccountSubType ?? null,
+          account.Classification ?? null,
+          account.CurrentBalance ?? null,
+          account.Active ?? null,
+          account
+        ]
+      );
+    }
+  });
+};
 const parseReportRows = (report: any, startDate: string, endDate: string) => {
   const columns = report?.Columns?.Column ?? [];
   const columnTitles = columns.map((col: any) => (col.ColTitle ?? col.Name ?? "").toString());
+  const hasMeaningfulTitles = columnTitles.some(
+    (title) => title && !/^col_\\d+$/i.test(title) && title.trim() !== ""
+  );
+  const fallbackOrder = ["Date", "Transaction Type", "Doc Num", "Name", "Account", "Amount", "Class"];
 
   const rows: any[] = [];
   const walk = (row: any) => {
     if (row.ColData) {
       const record: Record<string, string> = {};
+      const ids: Record<string, string> = {};
+      const hrefs: Record<string, string> = {};
       row.ColData.forEach((col: any, idx: number) => {
-        record[columnTitles[idx] || `col_${idx}`] = col.value ?? "";
+        const key = hasMeaningfulTitles
+          ? columnTitles[idx] || `col_${idx}`
+          : fallbackOrder[idx] || `col_${idx}`;
+        record[key] = col.value ?? "";
+        if (col.id) {
+          ids[key] = col.id;
+        }
+        if (col.href) {
+          hrefs[key] = col.href;
+        }
       });
-      rows.push({ record, raw: row });
+      rows.push({ record, ids, hrefs, raw: row });
     }
     if (row.Rows?.Row) {
       row.Rows.Row.forEach(walk);
@@ -134,24 +179,98 @@ const parseReportRows = (report: any, startDate: string, endDate: string) => {
     return match ? record[match] : undefined;
   };
 
+  const extractAny = (record: Record<string, string>, keys: string[]) => {
+    for (const key of keys) {
+      const value = extract(record, key);
+      if (value) return value;
+    }
+    return undefined;
+  };
+
+  const parseAmount = (value?: string) => {
+    if (!value) return null;
+    const trimmed = value.trim();
+    const isNegative = trimmed.startsWith("(") && trimmed.endsWith(")");
+    const cleaned = trimmed.replace(/[,$()]/g, "");
+    const num = Number(cleaned);
+    if (Number.isNaN(num)) return null;
+    return isNegative ? -num : num;
+  };
+
   return rows.map((row) => {
     const rec = row.record;
-    const txnDate = extract(rec, "Date");
-    const txnType = extract(rec, "Transaction Type") ?? extract(rec, "Type");
-    const docNum = extract(rec, "Num") ?? extract(rec, "Doc Num");
-    const name = extract(rec, "Name") ?? extract(rec, "Customer");
-    const account = extract(rec, "Account");
-    const amount = extract(rec, "Amount") ?? extract(rec, "Total");
+    const ids = row.ids ?? {};
+    const hrefs = row.hrefs ?? {};
+    const txnDate = extractAny(rec, ["Date", "tx_date", "TxnDate"]);
+    const txnType = extractAny(rec, ["Transaction Type", "Txn Type", "Type", "txn_type"]);
+    const docNum = extractAny(rec, ["Num", "Doc Num", "DocNumber", "doc_num"]);
+    const name = extractAny(rec, ["Name", "Customer", "Vendor", "Employee"]);
+    let account = extractAny(rec, ["Account", "account", "Account Name", "account_name"]);
+    if (!account) {
+      const entry = Object.entries(rec).find(([key]) => key.toLowerCase().includes("account"));
+      account = entry?.[1];
+    }
+
+    let amount = extractAny(rec, [
+      "Amount",
+      "Total",
+      "amount",
+      "net_amount",
+      "net amount",
+      "subt_nat_amount",
+      "subt nat amount",
+      "home_net_amount",
+      "foreign_net_amount",
+      "credit_amt",
+      "debt_amt",
+      "balance"
+    ]);
+    if (!amount) {
+      const amountKey = Object.keys(rec).find((key) =>
+        key.toLowerCase().includes("amount") ||
+        key.toLowerCase().includes("total") ||
+        key.toLowerCase().includes("credit") ||
+        key.toLowerCase().includes("debt")
+      );
+      amount = amountKey ? rec[amountKey] : undefined;
+    }
+    if (!amount) {
+      const numeric = Object.values(rec)
+        .filter((value) => typeof value === "string")
+        .map((value) => value.trim())
+        .filter((value) => /^[\\$\\-\\(\\)\\d,\\.]+$/.test(value) && /\\d/.test(value));
+      amount = numeric.length ? numeric[numeric.length - 1] : undefined;
+    }
+    const className = extractAny(rec, ["Class", "class", "Class Name", "class_name"]);
+    const txnIdFromIdCols =
+      extractAny(ids, ["Transaction Type", "Txn Type", "Type", "TxnId", "Txn ID", "Transaction Id", "Transaction ID", "Id"]) ??
+      Object.values(ids)[0];
+    let txnIdFromHref: string | undefined;
+    let txnTypeFromHref: string | undefined;
+    for (const href of Object.values(hrefs)) {
+      try {
+        const url = new URL(href);
+        txnIdFromHref = url.searchParams.get("txnId") ?? url.searchParams.get("txnid") ?? undefined;
+        txnTypeFromHref = url.searchParams.get("txnType") ?? url.searchParams.get("txntype") ?? undefined;
+        if (txnIdFromHref) break;
+      } catch {
+        // ignore invalid hrefs
+      }
+    }
+    const txnId = txnIdFromIdCols ?? txnIdFromHref ?? extractAny(rec, ["TxnId", "Txn ID", "Transaction Id", "Transaction ID", "Id"]);
+    const txnTypeFinal = txnTypeFromHref ?? txnType;
 
     return {
       report_start_date: startDate,
       report_end_date: endDate,
+      txn_id: txnId ?? null,
       txn_date: txnDate ?? null,
-      txn_type: txnType ?? null,
+      txn_type: txnTypeFinal ?? null,
       doc_num: docNum ?? null,
       name: name ?? null,
       account: account ?? null,
-      amount: amount ? Number(amount.replace(/,/g, "")) : null,
+      amount: parseAmount(amount),
+      class_name: className ?? null,
       raw: row.raw
     };
   });
@@ -162,17 +281,21 @@ const upsertTransactionList = async (rows: any[]) => {
   await withClient(async (client) => {
     for (const row of rows) {
       await client.query(
-        `INSERT INTO qbo_transaction_list_rows (report_start_date, report_end_date, txn_date, txn_type, doc_num, name, account, amount, raw)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)` ,
+        `INSERT INTO qbo_transaction_list_rows
+           (report_start_date, report_end_date, txn_id, txn_date, txn_type, doc_num, name, account, amount, ai_category, ai_status, raw)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)` ,
         [
           row.report_start_date,
           row.report_end_date,
+          row.txn_id,
           row.txn_date,
           row.txn_type,
           row.doc_num,
           row.name,
           row.account,
           row.amount,
+          row.class_name ?? null,
+          row.class_name ? "from_qbo" : null,
           row.raw
         ]
       );
@@ -213,17 +336,37 @@ export const ingestAll = async () => {
   const journalEntries = await queryAll<any>(conn.realm_id, "JournalEntry", dateRangeClause("TxnDate", startDate, endDate));
   await upsertJournalEntries(journalEntries);
 
+  const accounts = await queryAll<any>(conn.realm_id, "Account", "Active IN (true,false)");
+  await upsertAccounts(accounts);
+
   const chunks = chunkMonths(new Date(startDate), new Date(endDate), 6);
   for (const chunk of chunks) {
     await query(
       "DELETE FROM qbo_transaction_list_rows WHERE report_start_date=$1 AND report_end_date=$2",
       [chunk.start.toISOString().slice(0, 10), chunk.end.toISOString().slice(0, 10)]
     );
-    const report = await qboReport<any>(conn.realm_id, "TransactionList", {
+
+    const baseParams = {
       start_date: chunk.start.toISOString().slice(0, 10),
       end_date: chunk.end.toISOString().slice(0, 10)
-    });
-    const rows = parseReportRows(report, chunk.start.toISOString().slice(0, 10), chunk.end.toISOString().slice(0, 10));
+    };
+
+    let report: any;
+    try {
+      report = await qboReport<any>(conn.realm_id, "TransactionList", {
+        ...baseParams,
+        columns: "tx_date,txn_type,doc_num,name,account_name,account,net_amount,subt_nat_amount,credit_amt,debt_amt,class",
+        qzurl: "true"
+      });
+    } catch {
+      report = await qboReport<any>(conn.realm_id, "TransactionList", baseParams);
+    }
+
+    const rows = parseReportRows(
+      report,
+      chunk.start.toISOString().slice(0, 10),
+      chunk.end.toISOString().slice(0, 10)
+    );
     await upsertTransactionList(rows);
   }
 
@@ -232,7 +375,8 @@ export const ingestAll = async () => {
       (SELECT COUNT(*) FROM qbo_customers) as customers,
       (SELECT COUNT(*) FROM qbo_payments) as payments,
       (SELECT COUNT(*) FROM qbo_journal_entries) as journal_entries,
-      (SELECT COUNT(*) FROM qbo_transaction_list_rows) as transaction_rows`
+      (SELECT COUNT(*) FROM qbo_transaction_list_rows) as transaction_rows,
+      (SELECT COUNT(*) FROM qbo_accounts) as accounts`
   );
 
   return totals.rows[0];

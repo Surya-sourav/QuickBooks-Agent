@@ -217,6 +217,137 @@ body {
   height: 100% !important;
 }
 
+.transactions {
+  grid-column: 1 / -1;
+}
+
+.accounts {
+  grid-column: 1 / -1;
+}
+
+.accounts details {
+  cursor: pointer;
+}
+
+.accounts summary {
+  font-family: "Space Grotesk", sans-serif;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.mapping {
+  grid-column: 1 / -1;
+}
+
+.transactions-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.transactions-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.transactions-footer {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.page-info {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.page-size {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #fff;
+  font-size: 13px;
+}
+
+.loader {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.loader::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--accent-2);
+  border-right-color: transparent;
+  display: inline-block;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.table-wrap {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: auto;
+  max-height: 320px;
+  background: #fffdf9;
+}
+
+.transactions-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.transactions-table th,
+.transactions-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.transactions-table th {
+  position: sticky;
+  top: 0;
+  background: #fff3e2;
+  z-index: 1;
+}
+
+.sync-errors {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.sync-errors ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
 .meta {
   margin-top: 12px;
   color: var(--muted);
